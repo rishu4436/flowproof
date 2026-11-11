@@ -1,0 +1,409 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id          String       @id
+  email       String       @unique
+  name        String
+  createdAt   DateTime     @default(now()) @db.Timestamptz(6)
+  memberships Membership[]
+  workflows   Workflow[]   @relation("WorkflowOwner")
+  auditEvents AuditEvent[]
+
+  @@map("users")
+}
+
+model Workspace {
+  id           String             @id
+  name         String
+  timezone     String             @default("UTC")
+  createdAt    DateTime           @default(now()) @db.Timestamptz(6)
+  updatedAt    DateTime           @updatedAt @db.Timestamptz(6)
+  memberships  Membership[]
+  workflows    Workflow[]
+  runs         Run[]
+  settings     WorkspaceSetting?
+  integrations Integration[]
+
+  @@map("workspaces")
+}
+
+model Membership {
+  id          String    @id
+  userId      String
+  workspaceId String
+  role        String
+  createdAt   DateTime  @default(now()) @db.Timestamptz(6)
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, workspaceId])
+  @@map("memberships")
+}
+
+model Workflow {
+  id            String            @id
+  workspaceId   String
+  name          String
+  description   String
+  category      String
+  ownerId       String
+  status        String
+  activeVersion Int               @default(0)
+  environment   String            @default("demo")
+  createdAt     DateTime          @default(now()) @db.Timestamptz(6)
+  updatedAt     DateTime          @updatedAt @db.Timestamptz(6)
+  workspace     Workspace         @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  owner         User              @relation("WorkflowOwner", fields: [ownerId], references: [id])
+  versions      WorkflowVersion[]
+  runs          Run[]
+
+  @@index([workspaceId, status])
+  @@index([category])
+  @@map("workflows")
+}
+
+model WorkflowVersion {
+  id                 String   @id
+  workflowId         String
+  version            Int
+  approved           Boolean  @default(false)
+  definition         Json
+  verificationPolicy Json
+  inputSchema        Json
+  createdAt          DateTime @default(now()) @db.Timestamptz(6)
+  createdById        String?
+  workflow           Workflow @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  runs               Run[]
+
+  @@unique([workflowId, version])
+  @@map("workflow_versions")
+}
+
+model Run {
+  id                 String              @id
+  workspaceId        String
+  workflowId         String
+  workflowVersionId  String
+  status             String
+  objective          String
+  requestedValues    Json
+  environment        String
+  scenario           String?
+  outcome            String?
+  writeStarted       Boolean             @default(false)
+  writeResponseKnown Boolean             @default(false)
+  idempotencyKey     String              @unique
+  cursorNodeId       String?
+  eventSeq           Int                 @default(0)
+  errorSummary       String?
+  pauseRequested     Boolean             @default(false)
+  cancelRequested    Boolean             @default(false)
+  startedAt          DateTime?           @db.Timestamptz(6)
+  endedAt            DateTime?           @db.Timestamptz(6)
+  durationMs         Int?
+  createdAt          DateTime            @default(now()) @db.Timestamptz(6)
+  updatedAt          DateTime            @updatedAt @db.Timestamptz(6)
+  workspace          Workspace           @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  workflow           Workflow            @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  workflowVersion    WorkflowVersion     @relation(fields: [workflowVersionId], references: [id])
+  steps              RunStep[]
+  events             RunEvent[]
+  artifacts          RunArtifact[]
+  recoveries         RecoveryAttempt[]
+  checks             VerificationCheck[]
+  receipt            OutcomeReceipt?
+  aiRequests         AIRequest[]
+  approvals          Approval[]
+  benchmarkRun       BenchmarkRun?
+
+  @@index([workspaceId, createdAt])
+  @@index([status])
+  @@index([workflowId, createdAt])
+  @@map("runs")
+}
+
+model RunStep {
+  id           String        @id
+  runId        String
+  nodeId       String
+  actionType   String
+  name         String
+  status       String
+  sequence     Int
+  input        Json?
+  output       Json?
+  errorType    String?
+  errorMessage String?
+  startedAt    DateTime?     @db.Timestamptz(6)
+  endedAt      DateTime?     @db.Timestamptz(6)
+  durationMs   Int?
+  run          Run           @relation(fields: [runId], references: [id], onDelete: Cascade)
+  artifacts    RunArtifact[]
+
+  @@index([runId, sequence])
+  @@map("run_steps")
+}
+
+model RunEvent {
+  id        String   @id
+  runId     String
+  sequence  Int
+  type      String
+  payload   Json
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+  run       Run      @relation(fields: [runId], references: [id], onDelete: Cascade)
+
+  @@unique([runId, sequence])
+  @@index([runId, sequence])
+  @@map("run_events")
+}
+
+model RunArtifact {
+  id          String   @id
+  runId       String
+  stepId      String?
+  kind        String
+  storagePath String
+  checksum    String
+  mimeType    String
+  byteSize    Int
+  label       String?
+  capturedAt  DateTime @db.Timestamptz(6)
+  run         Run      @relation(fields: [runId], references: [id], onDelete: Cascade)
+  step        RunStep? @relation(fields: [stepId], references: [id])
+
+  @@index([runId])
+  @@map("run_artifacts")
+}
+
+model RecoveryAttempt {
+  id                   String   @id
+  runId                String
+  stepId               String?
+  nodeId               String
+  attempt              Int
+  source               String
+  failureCategory      String
+  diagnosis            String
+  proposal             Json
+  uncertainty          String?
+  changesWriteBehavior Boolean
+  approvalState        String
+  applied              Boolean  @default(false)
+  result               String?
+  createdAt            DateTime @default(now()) @db.Timestamptz(6)
+  run                  Run      @relation(fields: [runId], references: [id], onDelete: Cascade)
+
+  @@index([runId])
+  @@map("recovery_attempts")
+}
+
+model VerificationCheck {
+  id             String   @id
+  runId          String
+  name           String
+  strategy       String
+  authoritative  Boolean
+  expected       Json?
+  observed       Json?
+  source         String
+  result         String
+  evidenceRefs   Json?
+  details        String?
+  createdAt      DateTime @default(now()) @db.Timestamptz(6)
+  run            Run      @relation(fields: [runId], references: [id], onDelete: Cascade)
+
+  @@index([runId])
+  @@map("verification_checks")
+}
+
+model OutcomeReceipt {
+  id            String   @id
+  runId         String   @unique
+  decision      String
+  canonical     Json
+  integrityHash String
+  createdAt     DateTime @default(now()) @db.Timestamptz(6)
+  run           Run      @relation(fields: [runId], references: [id], onDelete: Cascade)
+
+  @@index([createdAt])
+  @@map("outcome_receipts")
+}
+
+model AIRequest {
+  id               String   @id
+  runId            String?
+  workspaceId      String?
+  role             String
+  requestedModel   String
+  servedModel      String?
+  provider         String?
+  otariRequestId   String?
+  promptTokens     Int?
+  completionTokens Int?
+  totalTokens      Int?
+  costUsd          String?
+  pricingSource    String?
+  latencyMs        Int?
+  status           String
+  error            String?
+  createdAt        DateTime @default(now()) @db.Timestamptz(6)
+  run              Run?     @relation(fields: [runId], references: [id], onDelete: SetNull)
+
+  @@index([createdAt])
+  @@index([requestedModel])
+  @@map("ai_requests")
+}
+
+model BenchmarkSuite {
+  id        String         @id
+  name      String
+  status    String
+  config    Json
+  createdAt DateTime       @default(now()) @db.Timestamptz(6)
+  endedAt   DateTime?      @db.Timestamptz(6)
+  runs      BenchmarkRun[]
+
+  @@map("benchmark_suites")
+}
+
+model BenchmarkRun {
+  id               String         @id
+  suiteId          String
+  scenario         String
+  approach         String
+  model            String?
+  outcome          String
+  actualOutcome    String?
+  incorrectSuccess Boolean        @default(false)
+  metrics          Json
+  runId            String?        @unique
+  createdAt        DateTime       @default(now()) @db.Timestamptz(6)
+  suite            BenchmarkSuite @relation(fields: [suiteId], references: [id], onDelete: Cascade)
+  run              Run?           @relation(fields: [runId], references: [id])
+
+  @@index([suiteId])
+  @@map("benchmark_runs")
+}
+
+model Approval {
+  id         String    @id
+  runId      String?
+  recoveryId String?
+  requester  String
+  actor      String?
+  scope      String
+  decision   String
+  note       String?
+  createdAt  DateTime  @default(now()) @db.Timestamptz(6)
+  decidedAt  DateTime? @db.Timestamptz(6)
+  run        Run?      @relation(fields: [runId], references: [id], onDelete: Cascade)
+
+  @@index([decision])
+  @@map("approvals")
+}
+
+model AuditEvent {
+  id         String   @id
+  actorId    String?
+  action     String
+  targetType String
+  targetId   String
+  metadata   Json?
+  createdAt  DateTime @default(now()) @db.Timestamptz(6)
+  actor      User?    @relation(fields: [actorId], references: [id])
+
+  @@index([createdAt])
+  @@index([action])
+  @@map("audit_events")
+}
+
+model Integration {
+  id          String    @id
+  workspaceId String
+  type        String
+  status      String
+  config      Json
+  updatedAt   DateTime  @updatedAt @db.Timestamptz(6)
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, type])
+  @@map("integrations")
+}
+
+model WorkspaceSetting {
+  workspaceId String    @id
+  data        Json
+  updatedAt   DateTime  @updatedAt @db.Timestamptz(6)
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@map("workspace_settings")
+}
+
+model Job {
+  id          String    @id
+  type        String
+  payload     Json
+  status      String
+  runId       String?   @unique
+  attempts    Int       @default(0)
+  lockedAt    DateTime? @db.Timestamptz(6)
+  lockedBy    String?
+  availableAt DateTime  @default(now()) @db.Timestamptz(6)
+  lastError   String?
+  createdAt   DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt   DateTime  @updatedAt @db.Timestamptz(6)
+
+  @@index([status, availableAt])
+  @@map("jobs")
+}
+
+model ServiceHeartbeat {
+  service   String   @id
+  status    String
+  details   Json?
+  updatedAt DateTime @updatedAt @db.Timestamptz(6)
+
+  @@map("service_heartbeats")
+}
+
+model PortalInvoice {
+  id             String   @id
+  vendor         String
+  purchaseOrder  String
+  amountCents    Int
+  currency       String
+  paymentTerms   String
+  status         String
+  idempotencyKey String?  @unique
+  scenario       String?
+  createdAt      DateTime @default(now()) @db.Timestamptz(6)
+
+  @@map("portal_invoices")
+}
+
+model PortalCustomer {
+  id        String   @id
+  name      String
+  email     String
+  note      String
+  updatedAt DateTime @updatedAt @db.Timestamptz(6)
+
+  @@map("portal_customers")
+}
+
+model PortalControl {
+  id          String   @id
+  scenario    String
+  lastWebhook Json?
+  updatedAt   DateTime @updatedAt @db.Timestamptz(6)
+
+  @@map("portal_controls")
+}

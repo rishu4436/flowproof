@@ -1,0 +1,28 @@
+{
+  "name": "@flowproof/database",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "generate": "prisma generate",
+    "migrate": "dotenv -e ../../.env -- prisma migrate deploy",
+    "seed": "dotenv -e ../../.env -- tsx src/seed.ts",
+    "reset": "dotenv -e ../../.env -- prisma migrate reset --force",
+    "typecheck": "tsc --noEmit",
+    "lint": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@flowproof/core": "workspace:*",
+    "@prisma/client": "^6.18.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.5.2",
+    "dotenv-cli": "^10.0.0",
+    "prisma": "^6.18.0",
+    "tsx": "^4.20.5",
+    "typescript": "^5.9.3"
+  }
+}

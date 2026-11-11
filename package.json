@@ -1,0 +1,30 @@
+{
+  "name": "flowproof",
+  "private": true,
+  "packageManager": "pnpm@9.15.4",
+  "scripts": {
+    "dev": "pnpm --filter @flowproof/database generate && concurrently -k -n web,worker,portal -c cyan,magenta,yellow \"pnpm --filter @flowproof/web dev\" \"pnpm --filter @flowproof/worker dev\" \"pnpm --filter @flowproof/demo-portal dev\"",
+    "build": "pnpm --filter @flowproof/database generate && pnpm --filter @flowproof/web build && pnpm --filter @flowproof/worker build && pnpm --filter @flowproof/demo-portal build",
+    "typecheck": "pnpm -r --if-present typecheck",
+    "lint": "pnpm -r --if-present lint",
+    "test": "vitest run",
+    "test:e2e": "pnpm --filter @flowproof/web e2e",
+    "db:generate": "pnpm --filter @flowproof/database generate",
+    "db:migrate": "pnpm --filter @flowproof/database migrate",
+    "db:seed": "pnpm --filter @flowproof/database seed",
+    "db:pglite": "node scripts/pglite-server.mjs",
+    "db:reset": "pnpm --filter @flowproof/database reset",
+    "demo:reset": "pnpm --filter @flowproof/demo-portal reset",
+    "browser:install": "pnpm --filter @flowproof/worker exec playwright install chromium",
+    "setup": "docker compose up -d && pnpm db:migrate && pnpm db:seed && pnpm browser:install"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1",
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.4"
+  },
+  "dependencies": {
+    "@electric-sql/pglite": "^0.5.15",
+    "@electric-sql/pglite-socket": "^0.2.18"
+  }
+}
